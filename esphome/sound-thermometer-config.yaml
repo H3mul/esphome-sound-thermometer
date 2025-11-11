@@ -1,0 +1,128 @@
+esphome:
+  name: sound-thermometer
+  friendly_name: Sound Thermometer
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+ota:
+  - platform: esphome
+    password: "your-ota-password-here"  # Replace with actual password
+
+wifi:
+  # ssid: !secret wifi_ssid
+  # password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Sound-Thermometer Hotspot"
+    password: "fallback-password"
+
+external_components:
+  - source: components
+
+number:
+  - platform: template
+    name: "Attack Rate"
+    id: attack_rate
+    min_value: 0.01
+    max_value: 1.0
+    step: 0.01
+    initial_value: 0.3
+    optimistic: true
+    entity_category: config
+
+  - platform: template
+    name: "Decay Rate"
+    id: decay_rate
+    min_value: 0.01
+    max_value: 1.0
+    step: 0.01
+    initial_value: 0.05
+    optimistic: true
+    entity_category: config
+
+# Microphone sensor using ADC on GPIO0
+sensor:
+  - platform: adc
+    pin: GPIO0
+    id: microphone_level
+    name: "Microphone Level"
+    update_interval: 100ms
+    attenuation: 12db  # Adjust based on microphone output
+    unit_of_measurement: "V"
+    accuracy_decimals: 3
+
+  - platform: template
+    name: "Microphone Level Smoothed"
+    id: microphone_level_smoothed
+    lambda: |-
+      return id(microphone_level).state;
+    update_interval: 100ms
+    unit_of_measurement: ""
+    accuracy_decimals: 3
+    filters:
+      - lambda: |-
+          static float smoothed = 0.0f;
+          // Normalize level to 0-1 range (3.3V is max for ADC)
+          float normalized = std::max(0.0f, std::min(1.0f, x / 3.3f));
+          
+          // Attack/decay smoothing using configurable rates
+          float attack_rate_val = id(attack_rate).state;
+          float decay_rate_val = id(decay_rate).state;
+          
+          if (normalized > smoothed) {
+            // Attack: quickly rise to new level
+            smoothed = smoothed + attack_rate_val * (normalized - smoothed);
+          } else {
+            // Decay: slowly fall to new level
+            smoothed = smoothed + decay_rate_val * (normalized - smoothed);
+          }
+          
+          return smoothed;
+
+light:
+  - platform: fakelight
+    name: "Max Sound Color"
+    id: max_sound_color
+    restore_mode: RESTORE_DEFAULT_OFF
+    entity_category: config
+
+  - platform: neopixelbus
+    variant: WS2812x
+    type: GRB
+    pin: GPIO1
+    num_leds: 10  # Adjust number of LEDs as needed
+    name: "LED"
+    effects:
+      - lambda:
+          name: "Sound Gradient"
+          update_interval: 100ms
+          lambda: |-
+            auto level = id(microphone_level_smoothed).state;
+            // level is already smoothed by sensor filter, just use it directly
+            int num_lit = (int)(level * it.size());
+            
+            // Get the end color from the configurable light
+            const LightColorValues endColorValues = id(max_sound_color).current_values;
+            const Color endColor = Color(
+                  endColorValues.get_red() * 255,
+                endColorValues.get_green() * 255,
+                endColorValues.get_blue() * 255
+              ).fade_to_black(endColorValues.get_brightness());
+            
+            // Light up LEDs proportionally
+            for (int i = 0; i < it.size(); i++) {
+              if (i < num_lit) {
+                // Fully lit LEDs: use the end color
+                it[i] = endColor;
+              } else {
+                // Unlit LEDs: off (black)
+                it[i] = Color::BLACK;
+              }
+            }
