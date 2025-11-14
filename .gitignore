@@ -1,0 +1,23 @@
+# KiCad files to ignore
+*.kicad_prl
+*-cache*
+schematic-backups
+*~*
+*.bak
+*.dcm
+*.lib
+*.mod
+*.net
+*.rpt
+*.gbr
+*.cmp
+*.log
+*.boms
+*.pos
+*.emn
+*.gko
+*.gpb
+*.gml
+*.gbrjob
+*.gerbers
+*.pdf
