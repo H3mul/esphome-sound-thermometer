@@ -5,6 +5,11 @@ esphome:
   friendly_name: Sound Thermometer
   platformio_options:
     board_build.flash_mode: dio
+  on_boot:
+    priority: 600
+    then:
+      - light.turn_on:
+          id: sound_level_led
 
 esp32:
   board: esp32-c3-devkitm-1
@@ -14,6 +19,9 @@ esp32:
 
 # Enable logging
 logger:
+  level: DEBUG
+  logs:
+    sensor: INFO
 
 wifi:
   networks:
@@ -26,101 +34,128 @@ external_components:
   - source: github://H3mul/esphome-components
     components: [fakelight]
 
+
+web_server:
+    port: 80
+    local: true
+    version: 3
+    sorting_groups:
+      - id: led_settings
+        name: "LED Display Settings"
+        sorting_weight: 0
+      - id: mic_settings
+        name: "Microphone"
+        sorting_weight: 1
+      - id: sound_settings
+        name: "Sound Processing Settings"
+        sorting_weight: 2
+
 number:
   - platform: template
-    name: "Attack Rate"
+    name: "Smoothing Attack Rate"
     id: attack_rate
     min_value: 0.01
     max_value: 1.0
     step: 0.01
     initial_value: 0.3
     optimistic: true
-    entity_category: config
+    web_server:
+      sorting_group_id: sound_settings
+    restore_value: true
 
   - platform: template
-    name: "Decay Rate"
+    name: "Smoothing Decay Rate"
     id: decay_rate
     min_value: 0.01
     max_value: 1.0
     step: 0.01
     initial_value: 0.05
     optimistic: true
-    entity_category: config
-
-# Microphone sensor using ADC on GPIO0
-sensor:
-  - platform: adc
-    pin: GPIO0
-    id: microphone_level
-    name: "Microphone Level"
-    update_interval: 100ms
-    attenuation: 12db  # Adjust based on microphone output
-    unit_of_measurement: "V"
-    accuracy_decimals: 3
+    web_server:
+      sorting_group_id: sound_settings
+    restore_value: true
 
   - platform: template
-    name: "Microphone Level Smoothed"
-    id: microphone_level_smoothed
-    lambda: |-
-      return id(microphone_level).state;
-    update_interval: 100ms
-    unit_of_measurement: ""
-    accuracy_decimals: 3
-    filters:
-      - lambda: |-
-          static float smoothed = 0.0f;
-          // Normalize level to 0-1 range (3.3V is max for ADC)
-          float normalized = std::max(0.0f, std::min(1.0f, x / 3.3f));
-          
-          // Attack/decay smoothing using configurable rates
-          float attack_rate_val = id(attack_rate).state;
-          float decay_rate_val = id(decay_rate).state;
-          
-          if (normalized > smoothed) {
-            // Attack: quickly rise to new level
-            smoothed = smoothed + attack_rate_val * (normalized - smoothed);
-          } else {
-            // Decay: slowly fall to new level
-            smoothed = smoothed + decay_rate_val * (normalized - smoothed);
-          }
-          
-          return smoothed;
+    name: "Mic Level Test"
+    id: test_level
+    min_value: 0.01
+    max_value: 3.3
+    step: 0.01
+    initial_value: 0.05
+    optimistic: true
+    web_server:
+      sorting_group_id: mic_settings
+    restore_value: true
+
+  - platform: template
+    name: "Sound Level Idle"
+    id: level_idle
+    min_value: 0.01
+    max_value: 5.0
+    step: 0.01
+    initial_value: 2.5
+    unit_of_measurement: "V"
+    optimistic: true
+    web_server:
+      sorting_group_id: sound_settings
+    restore_value: true
+
+  - platform: template
+    name: "Sound Level Sensitivity"
+    id: level_sensitivity
+    min_value: 0.01
+    max_value: 5.0
+    step: 0.01
+    initial_value: 2.5
+    unit_of_measurement: "V"
+    optimistic: true
+    web_server:
+      sorting_group_id: sound_settings
+    restore_value: true
 
 light:
   - platform: fakelight
     name: "Max Sound Color"
     id: max_sound_color
-    restore_mode: RESTORE_DEFAULT_OFF
-    entity_category: config
+    restore_mode: RESTORE_DEFAULT_ON
+    web_server:
+      sorting_group_id: led_settings
 
   - platform: esp32_rmt_led_strip
     chipset: WS2812
     rgb_order: GRB
     pin: GPIO1
     num_leds: 10  # Adjust number of LEDs as needed
+    id: sound_level_led
     name: "LED"
+    web_server:
+      sorting_group_id: led_settings
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - light.control: 
+          id: sound_level_led
+          effect: "Sound Gradient"
     effects:
       - addressable_lambda:
           name: "Sound Gradient"
           update_interval: 100ms
           lambda: |-
-            auto level = id(microphone_level_smoothed).state;
+            auto mic_level = id(mic_adc_level).state;
+
             // level is already smoothed by sensor filter, just use it directly
-            int num_lit = (int)(level * it.size());
-            
-            // Get the end color from the configurable light
-            auto endColorValues = id(max_sound_color).current_values;
+            int num_lit = (int)(mic_level / 100.0f * it.size());
+
+            auto highColor = id(max_sound_color).current_values;
             Color endColor = Color(
-                  (uint8_t)(endColorValues.get_red() * 255),
-                  (uint8_t)(endColorValues.get_green() * 255),
-                  (uint8_t)(endColorValues.get_blue() * 255)
+                  (uint8_t)(highColor.get_red() * 255),
+                  (uint8_t)(highColor.get_green() * 255),
+                  (uint8_t)(highColor.get_blue() * 255)
               );
             
             // Light up LEDs proportionally
             for (int i = 0; i < it.size(); i++) {
-              if (i < num_lit) {
-                // Fully lit LEDs: use the end color
-                it[i] = endColor;
+              if (i < num_lit && num_lit > 0) {
+                it[i] = current_color.gradient(endColor, (float)(i) / it.size() * 255);
               } else {
                 // Unlit LEDs: off (black)
                 it[i] = Color::BLACK;
