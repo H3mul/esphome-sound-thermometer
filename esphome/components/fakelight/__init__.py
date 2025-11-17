@@ -1,1 +1,0 @@
-# FakeLight component

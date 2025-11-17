@@ -1,30 +1,30 @@
+<<: !include ../../base-esphome-configuration.yaml
+
 esphome:
   name: sound-thermometer
   friendly_name: Sound Thermometer
+  platformio_options:
+    board_build.flash_mode: dio
 
 esp32:
   board: esp32-c3-devkitm-1
+  variant: esp32c3
   framework:
-    type: arduino
+    type: esp-idf
 
 # Enable logging
 logger:
 
-ota:
-  - platform: esphome
-    password: "your-ota-password-here"  # Replace with actual password
-
 wifi:
-  # ssid: !secret wifi_ssid
-  # password: !secret wifi_password
-
-  # Enable fallback hotspot (captive portal) in case wifi connection fails
-  ap:
-    ssid: "Sound-Thermometer Hotspot"
-    password: "fallback-password"
+  networks:
+  - ssid: !secret wifi_ssid
+    password: !secret wifi_password
+  fast_connect: true
+  use_address: !secret sound_thermometer_local_ip
 
 external_components:
-  - source: components
+  - source: github://H3mul/esphome-components
+    components: [fakelight]
 
 number:
   - platform: template
@@ -93,14 +93,14 @@ light:
     restore_mode: RESTORE_DEFAULT_OFF
     entity_category: config
 
-  - platform: neopixelbus
-    variant: WS2812x
-    type: GRB
+  - platform: esp32_rmt_led_strip
+    chipset: WS2812
+    rgb_order: GRB
     pin: GPIO1
     num_leds: 10  # Adjust number of LEDs as needed
     name: "LED"
     effects:
-      - lambda:
+      - addressable_lambda:
           name: "Sound Gradient"
           update_interval: 100ms
           lambda: |-
@@ -109,12 +109,12 @@ light:
             int num_lit = (int)(level * it.size());
             
             // Get the end color from the configurable light
-            const LightColorValues endColorValues = id(max_sound_color).current_values;
-            const Color endColor = Color(
-                  endColorValues.get_red() * 255,
-                endColorValues.get_green() * 255,
-                endColorValues.get_blue() * 255
-              ).fade_to_black(endColorValues.get_brightness());
+            auto endColorValues = id(max_sound_color).current_values;
+            Color endColor = Color(
+                  (uint8_t)(endColorValues.get_red() * 255),
+                  (uint8_t)(endColorValues.get_green() * 255),
+                  (uint8_t)(endColorValues.get_blue() * 255)
+              );
             
             // Light up LEDs proportionally
             for (int i = 0; i < it.size(); i++) {
