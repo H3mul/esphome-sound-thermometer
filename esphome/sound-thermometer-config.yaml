@@ -15,7 +15,7 @@ esp32:
   board: esp32-c3-devkitm-1
   variant: esp32c3
   framework:
-    type: esp-idf
+    type: arduino
 
 # Enable logging
 logger:
@@ -43,83 +43,147 @@ web_server:
       - id: led_settings
         name: "LED Display Settings"
         sorting_weight: 0
-      - id: mic_settings
+      - id: mic_readings
         name: "Microphone"
         sorting_weight: 1
-      - id: sound_settings
-        name: "Sound Processing Settings"
+      - id: mic_settings
+        name: "Microphone Settings"
         sorting_weight: 2
 
 number:
-  - platform: template
-    name: "Smoothing Attack Rate"
-    id: attack_rate
-    min_value: 0.01
-    max_value: 1.0
-    step: 0.01
-    initial_value: 0.3
-    optimistic: true
-    web_server:
-      sorting_group_id: sound_settings
-    restore_value: true
 
   - platform: template
-    name: "Smoothing Decay Rate"
-    id: decay_rate
-    min_value: 0.01
-    max_value: 1.0
-    step: 0.01
-    initial_value: 0.05
+    name: "Peak Decay Rate"
+    id: peak_decay_rate
+    min_value: 0.0
+    max_value: 100.0
+    step: 1.0
+    initial_value: 50.0
     optimistic: true
-    web_server:
-      sorting_group_id: sound_settings
-    restore_value: true
-
-  - platform: template
-    name: "Mic Level Test"
-    id: test_level
-    min_value: 0.01
-    max_value: 3.3
-    step: 0.01
-    initial_value: 0.05
-    optimistic: true
+    unit_of_measurement: " %/s"
     web_server:
       sorting_group_id: mic_settings
+    icon: "mdi:timer-sand"
     restore_value: true
 
   - platform: template
-    name: "Sound Level Idle"
-    id: level_idle
-    min_value: 0.01
-    max_value: 5.0
-    step: 0.01
-    initial_value: 2.5
-    unit_of_measurement: "V"
-    optimistic: true
-    web_server:
-      sorting_group_id: sound_settings
+    name: "Mic Sensitivity Level"
+    id: mic_sensitivity_level
+    icon: "mdi:tune"
+    step: 1
+    min_value: 0.0
+    max_value: 1700.0
+    # step: 10.0
+    initial_value: 100.0 # Default gain. 100.0 means 1.0 from mic = 100%
+    optimistic: true     # Allows changing the value from the UI
+    unit_of_measurement: "mV"
     restore_value: true
+    web_server:
+      sorting_group_id: mic_settings
 
   - platform: template
-    name: "Sound Level Sensitivity"
-    id: level_sensitivity
-    min_value: 0.01
-    max_value: 5.0
-    step: 0.01
-    initial_value: 2.5
-    unit_of_measurement: "V"
+    name: "Mic Zero dB Level "
+    id: zero_db_level
+    icon: "mdi:tune"
+    step: 1
+    min_value: -100.0
+    max_value: 0.0
+    # step: 10.0
+    initial_value: -40.0
+    unit_of_measurement: "dB"
     optimistic: true
-    web_server:
-      sorting_group_id: sound_settings
     restore_value: true
+    web_server:
+      sorting_group_id: mic_settings
+
+sensor:
+  - platform: adc
+    name: Raw Microphone Input Voltage
+    id: mic_raw_level
+    pin: GPIO0
+    update_interval: 0ms
+    attenuation: 12db
+    internal: true
+    unit_of_measurement: "mV"
+    web_server:
+      sorting_group_id: mic_readings
+    icon: "mdi:waveform"
+    filters:
+      - multiply: 1000  # mV
+
+  - platform: template
+    id: mic_noise_floor
+    name: "Mic Noise Floor"
+    lambda: return id(mic_raw_level).state;
+    update_interval: 0ms
+    unit_of_measurement: "mV"
+    web_server:
+      sorting_group_id: mic_readings
+    icon: "mdi:chart-line"
+    filters:
+      - sliding_window_moving_average:
+          window_size: 1000
+          send_every: 10
+      - throttle: 100ms
+
+  - platform: template
+    id: mic_processed_level
+    name: "Mic Level Processed"
+    lambda: return id(mic_raw_level).state;
+    unit_of_measurement: "dB"
+    update_interval: 0ms
+    web_server:
+      sorting_group_id: mic_readings
+    icon: "mdi:chart-line"
+    filters:
+      - offset: !lambda return (-1.0) * id(mic_noise_floor).state;
+      - lambda: return fabs(x);
+      - sliding_window_moving_average:
+          window_size: 20
+          send_every: 3 
+      - lambda: return 20.0 * log10(x / id(mic_sensitivity_level).state);
+      - throttle: 20ms
+
+  - platform: template
+    id: mic_percentage_level
+    name: "Mic Level Percentage"
+    lambda: return id(mic_processed_level).state;
+    unit_of_measurement: "%"
+    update_interval: 0ms
+    web_server:
+      sorting_group_id: mic_readings
+    icon: "mdi:chart-line"
+    filters:
+      - lambda: return (x - id(zero_db_level).state) / (-1.0 * id(zero_db_level).state) * 100.0;
+      - clamp:
+          min_value: 0.0
+          max_value: 100.0
+      - lambda: |-
+          static uint32_t last_peak_update = 0;
+          static float sound_peak = 0.0f;
+
+          uint32_t now = millis();
+          if (last_peak_update == 0) last_peak_update = now;
+          float dt = (now - last_peak_update) / 1000.0f;
+          last_peak_update = now;
+
+          float decay = id(peak_decay_rate).state;
+          sound_peak = (decay > 0.0 && x < sound_peak) ? sound_peak - decay * dt : x;
+
+          if (sound_peak < 0.0f) sound_peak = 0.0f;
+          if (sound_peak > 100.0f) sound_peak = 100.0f;
+          return sound_peak;
+      - throttle: 20ms
+
 
 light:
   - platform: fakelight
-    name: "Max Sound Color"
+    name: "Sound Monitor Max Color"
     id: max_sound_color
     restore_mode: RESTORE_DEFAULT_ON
     web_server:
       sorting_group_id: led_settings
+    icon: "mdi:lightbulb"
 
   - platform: esp32_rmt_led_strip
     chipset: WS2812
@@ -127,10 +191,11 @@ light:
     pin: GPIO1
     num_leds: 10  # Adjust number of LEDs as needed
     id: sound_level_led
-    name: "LED"
+    name: "Sound Monitor"
     web_server:
       sorting_group_id: led_settings
     restore_mode: RESTORE_DEFAULT_ON
+    icon: "mdi:lightbulb"
     on_turn_on:
       - light.control: 
           id: sound_level_led
@@ -138,9 +203,9 @@ light:
     effects:
       - addressable_lambda:
           name: "Sound Gradient"
-          update_interval: 100ms
+          update_interval: 50ms
           lambda: |-
-            auto mic_level = id(mic_adc_level).state;
+            auto mic_level = id(mic_percentage_level).state;
 
             // level is already smoothed by sensor filter, just use it directly
             int num_lit = (int)(mic_level / 100.0f * it.size());
