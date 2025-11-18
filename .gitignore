@@ -1,4 +1,6 @@
 # KiCad files to ignore
+*\#auto_saved_files#
+*_autosave*
 *.kicad_prl
 *-cache*
 schematic-backups
