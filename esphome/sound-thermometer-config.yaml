@@ -49,6 +49,9 @@ web_server:
       - id: mic_settings
         name: "Microphone Settings"
         sorting_weight: 2
+      - id: power_options
+        name: "Power Options"
+        sorting_weight: 3
 
 interval:
   - interval: 10s
@@ -64,13 +67,12 @@ script:
     then:
       - if:
           condition:
-            # CONFIGURABLE: Set your safety threshold here.
-            # If source is less than 1.5A, turn off.
-            lambda: 'return id(usb_source_rating).state < 1.5;'
+            # If override is OFF and source is less than the configured threshold, turn off
+            lambda: 'return id(usb_source_rating).state < id(usb_current_requirement).state;'
           then:
             - logger.log: 
-                format: "SAFETY CUTOFF: USB Source too weak (%.1fA). LEDs disabled."
-                args: [ 'id(usb_source_rating).state' ]
+                format: "SAFETY CUTOFF: USB Source too weak to support current requirement (%.1fA < %.1fA). LEDs disabled."
+                args: [ 'id(usb_source_rating).state', 'id(usb_current_requirement).state' ]
             - switch.turn_off: led_power_mosfet
           else:
             - logger.log: "Power OK. LEDs Active."
@@ -82,6 +84,8 @@ switch:
     id: led_power_mosfet
     # Default to OFF to prevent brownout on boot
     restore_mode: ALWAYS_OFF
+    web_server:
+      sorting_group_id: power_options
     on_turn_on:
       - script.execute: check_power_safety
 
@@ -99,6 +103,20 @@ number:
       sorting_group_id: mic_settings
     icon: "mdi:timer-sand"
     restore_value: true
+
+  - platform: template
+    name: "USB Current Requirement"
+    id: usb_current_requirement
+    icon: "mdi:flash-outline"
+    step: 0.1
+    min_value: 0.1
+    max_value: 5.0
+    unit_of_measurement: "A"
+    initial_value: 1.5
+    optimistic: true
+    restore_value: true
+    web_server:
+      sorting_group_id: power_options
 
   - platform: template
     name: "Mic Sensitivity Level"
@@ -136,6 +154,8 @@ sensor:
     pin: GPIO4
     name: "USB-C CC1 Voltage"
     id: cc1_voltage
+    web_server:
+      sorting_group_id: power_options
     attenuation: 12db # Allows reading up to ~3.1V
     update_interval: 5s
     filters:
@@ -147,6 +167,8 @@ sensor:
     pin: GPIO3
     name: "USB-C CC2 Voltage"
     id: cc2_voltage
+    web_server:
+      sorting_group_id: power_options
     attenuation: 12db
     update_interval: 5s
     filters:
@@ -158,13 +180,8 @@ sensor:
     pin: GPIO1
     name: "USB D+ Voltage"
     id: d_plus_voltage
-    attenuation: 12db
-    update_interval: 2s
-
-  - platform: adc
-    pin: GPIOO2
-    name: "USB D- Voltage"
-    id: d_minus_voltage
+    web_server:
+      sorting_group_id: power_options
     attenuation: 12db
     update_interval: 2s
 
@@ -173,35 +190,24 @@ sensor:
     id: usb_source_rating
     unit_of_measurement: "A"
     accuracy_decimals: 1
+    web_server:
+      sorting_group_id: power_options
     update_interval: 2s
     lambda: |-
-      // 1. Check USB-C CC Pins (Native USB-C Chargers)
+      // 1. Check Native USB-C (C-to-C Cable)
+      // 1.6V = 3.0A, 0.9V = 1.5A
       float cc_max = max(id(cc1_voltage).state, id(cc2_voltage).state);
       if (cc_max > 1.23) return 3.0;
       if (cc_max > 0.66) return 1.5;
 
-      // 2. Check D+/D- Pins (Legacy USB-A Chargers)
-      float dp = id(d_plus_voltage).state;
-      float dm = id(d_minus_voltage).state;
-
-      // Apple 10W/12W (2.1A/2.4A) Chargers:
-      // Typically put 2.7V on one pin and 2.0V on the other.
-      // Samsung/Other Fast Chargers:
-      // Often put 1.2V on both.
-      
-      // Threshold: If we see substantial voltage (> 1.8V) on EITHER line,
-      // it is a dedicated high-power brick, not a computer.
-      if (dp > 1.8 || dm > 1.8) {
-        return 2.1; 
-      }
-      
-      // Dedicated Charging Port (DCP) - Shorted Data Lines
-      // Harder to detect passively, but usually floats around 1.2V if biased.
-      if (dp > 1.0 && dm > 1.0) {
-        return 1.5;
+      // 2. Check Legacy USB-A Brick (A-to-C Cable)
+      // High Power Bricks (Apple/Samsung) put >1.2V on D+
+      // PC Ports pull D+ Low (~0V)
+      if (id(d_plus_voltage).state > 1.2) {
+        return 2.1; // It's a high-current brick
       }
 
-      // Default: Standard USB Port
+      // 3. Default (Computer Port or Weak Charger)
       return 0.5;
 
   - platform: adc
