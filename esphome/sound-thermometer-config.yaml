@@ -50,8 +50,42 @@ web_server:
         name: "Microphone Settings"
         sorting_weight: 2
 
-number:
+interval:
+  - interval: 10s
+    then:
+      - if:
+          condition:
+            switch.is_on: led_power_mosfet
+          then:
+            - script.execute: check_power_safety
 
+script:
+  - id: check_power_safety
+    then:
+      - if:
+          condition:
+            # CONFIGURABLE: Set your safety threshold here.
+            # If source is less than 1.5A, turn off.
+            lambda: 'return id(usb_source_rating).state < 1.5;'
+          then:
+            - logger.log: 
+                format: "SAFETY CUTOFF: USB Source too weak (%.1fA). LEDs disabled."
+                args: [ 'id(usb_source_rating).state' ]
+            - switch.turn_off: led_power_mosfet
+          else:
+            - logger.log: "Power OK. LEDs Active."
+
+switch:
+  - platform: gpio
+    pin: GPIO10
+    name: "LED Power Main Switch"
+    id: led_power_mosfet
+    # Default to OFF to prevent brownout on boot
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - script.execute: check_power_safety
+
+number:
   - platform: template
     name: "Peak Decay Rate"
     id: peak_decay_rate
@@ -97,6 +131,79 @@ number:
       sorting_group_id: mic_settings
 
 sensor:
+
+  - platform: adc
+    pin: GPIO4
+    name: "USB-C CC1 Voltage"
+    id: cc1_voltage
+    attenuation: 12db # Allows reading up to ~3.1V
+    update_interval: 5s
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
+
+  - platform: adc
+    pin: GPIO3
+    name: "USB-C CC2 Voltage"
+    id: cc2_voltage
+    attenuation: 12db
+    update_interval: 5s
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
+
+  - platform: adc
+    pin: GPIO1
+    name: "USB D+ Voltage"
+    id: d_plus_voltage
+    attenuation: 12db
+    update_interval: 2s
+
+  - platform: adc
+    pin: GPIOO2
+    name: "USB D- Voltage"
+    id: d_minus_voltage
+    attenuation: 12db
+    update_interval: 2s
+
+  - platform: template
+    name: "USB Source Current Capability"
+    id: usb_source_rating
+    unit_of_measurement: "A"
+    accuracy_decimals: 1
+    update_interval: 2s
+    lambda: |-
+      // 1. Check USB-C CC Pins (Native USB-C Chargers)
+      float cc_max = max(id(cc1_voltage).state, id(cc2_voltage).state);
+      if (cc_max > 1.23) return 3.0;
+      if (cc_max > 0.66) return 1.5;
+
+      // 2. Check D+/D- Pins (Legacy USB-A Chargers)
+      float dp = id(d_plus_voltage).state;
+      float dm = id(d_minus_voltage).state;
+
+      // Apple 10W/12W (2.1A/2.4A) Chargers:
+      // Typically put 2.7V on one pin and 2.0V on the other.
+      // Samsung/Other Fast Chargers:
+      // Often put 1.2V on both.
+      
+      // Threshold: If we see substantial voltage (> 1.8V) on EITHER line,
+      // it is a dedicated high-power brick, not a computer.
+      if (dp > 1.8 || dm > 1.8) {
+        return 2.1; 
+      }
+      
+      // Dedicated Charging Port (DCP) - Shorted Data Lines
+      // Harder to detect passively, but usually floats around 1.2V if biased.
+      if (dp > 1.0 && dm > 1.0) {
+        return 1.5;
+      }
+
+      // Default: Standard USB Port
+      return 0.5;
+
   - platform: adc
     name: Raw Microphone Input Voltage
     id: mic_raw_level
@@ -175,7 +282,6 @@ sensor:
           return sound_peak;
       - throttle: 20ms
 
-
 light:
   - platform: fakelight
     name: "Sound Monitor Max Color"
@@ -188,7 +294,7 @@ light:
   - platform: esp32_rmt_led_strip
     chipset: WS2812
     rgb_order: GRB
-    pin: GPIO1
+    pin: GPIO6
     num_leds: 10  # Adjust number of LEDs as needed
     id: sound_level_led
     name: "Sound Monitor"
