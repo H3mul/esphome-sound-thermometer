@@ -178,7 +178,7 @@ sensor:
 
   - platform: adc
     pin: GPIO1
-    name: "USB D+ Voltage"
+    name: "USB-A D+ Voltage"
     id: d_plus_voltage
     web_server:
       sorting_group_id: power_options
@@ -186,7 +186,7 @@ sensor:
     update_interval: 2s
 
   - platform: template
-    name: "USB Source Current Capability"
+    name: "Interpreted USB Source Current Capability"
     id: usb_source_rating
     unit_of_measurement: "A"
     accuracy_decimals: 1
@@ -194,20 +194,25 @@ sensor:
       sorting_group_id: power_options
     update_interval: 2s
     lambda: |-
-      // 1. Check Native USB-C (C-to-C Cable)
-      // 1.6V = 3.0A, 0.9V = 1.5A
+      // 1. Check Native USB-C (Standard)
       float cc_max = max(id(cc1_voltage).state, id(cc2_voltage).state);
       if (cc_max > 1.23) return 3.0;
       if (cc_max > 0.66) return 1.5;
 
-      // 2. Check Legacy USB-A Brick (A-to-C Cable)
-      // High Power Bricks (Apple/Samsung) put >1.2V on D+
-      // PC Ports pull D+ Low (~0V)
-      if (id(d_plus_voltage).state > 1.2) {
-        return 2.1; // It's a high-current brick
+      // 2. Check D+ Voltage (GPIO 1 with 100k Pull-Up)
+      float dp = id(d_plus_voltage).state;
+
+      // D+ is floating; resistor pulls floating line to 3.3V
+      if (dp > 3.0) {
+        return 2.1; 
+      }
+      
+      // Active Chargers (Apple/Samsung): They drive 1.2V - 2.7V
+      if (dp > 1.0) {
+        return 2.0;
       }
 
-      // 3. Default (Computer Port or Weak Charger)
+      // Computer Port: Pulls line down to ~0.4V (overpowers 100k resistor)
       return 0.5;
 
   - platform: adc
