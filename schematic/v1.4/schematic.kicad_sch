@@ -4797,7 +4797,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "MAX4466"
+		(property "Value" "4466"
 			(at 69.088 96.52 90)
 			(effects
 				(font

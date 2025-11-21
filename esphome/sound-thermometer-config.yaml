@@ -108,7 +108,7 @@ binary_sensor:
 
 number:
   - platform: template
-    name: "Peak Decay Rate"
+    name: "Sound Monitor Peak Decay Rate"
     id: peak_decay_rate
     min_value: 0.0
     max_value: 100.0
@@ -185,7 +185,7 @@ sensor:
     pin: GPIO4
     name: "USB-C CC1 Voltage"
     id: cc1_voltage
-    icon: "mdi:lighting-bolt-circle"
+    icon: "mdi:lightning-bolt-circle"
     web_server:
       sorting_group_id: power_options
     attenuation: 12db # Allows reading up to ~3.1V
@@ -199,7 +199,7 @@ sensor:
     pin: GPIO3
     name: "USB-C CC2 Voltage"
     id: cc2_voltage
-    icon: "mdi:lighting-bolt-circle"
+    icon: "mdi:lightning-bolt-circle"
     web_server:
       sorting_group_id: power_options
     attenuation: 12db
@@ -213,7 +213,7 @@ sensor:
     pin: GPIO1
     name: "USB-A D+ Voltage"
     id: d_plus_voltage
-    icon: "mdi:lighting-bolt-circle"
+    icon: "mdi:lightning-bolt-circle"
     web_server:
       sorting_group_id: power_options
     attenuation: 12db
@@ -222,6 +222,7 @@ sensor:
   - platform: template
     name: "USB Source Current Capability"
     id: usb_source_rating
+    icon: "mdi:lightning-bolt-circle"
     unit_of_measurement: "A"
     accuracy_decimals: 1
     web_server:
