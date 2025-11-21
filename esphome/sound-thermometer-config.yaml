@@ -19,9 +19,7 @@ esp32:
 
 # Enable logging
 logger:
-  level: DEBUG
-  logs:
-    sensor: INFO
+  level: INFO
 
 wifi:
   networks:
@@ -33,7 +31,6 @@ wifi:
 external_components:
   - source: github://H3mul/esphome-components
     components: [fakelight]
-
 
 web_server:
     port: 80
@@ -52,6 +49,14 @@ web_server:
       - id: power_options
         name: "Power Safety"
         sorting_weight: 3
+
+globals:
+
+  - id: mic_signal_amplitude
+    type: float
+    restore_value: no
+    # 3.3V Peak-to-Peak / 2 = 1.65V RMS reference
+    initial_value: "1650.0" #mV
 
 interval:
   - interval: 10s
@@ -83,12 +88,23 @@ switch:
     pin: GPIO10
     name: "Main Power Switch"
     id: power_mosfet
+    internal: true
     # Default to OFF to prevent brownout on boot
     restore_mode: ALWAYS_OFF
+
+binary_sensor:
+  - platform: template
+    name: "Power Safety Cutoff Active"
+    icon: "mdi:flash-triangle"
+    id: power_safety_state
+    lambda: |-
+      if (id(power_mosfet).state) {
+        return false; // Power OK
+      } else {
+        return true;  // Power Cutoff Active
+      }
     web_server:
       sorting_group_id: power_options
-    on_turn_on:
-      - script.execute: check_power_safety
 
 number:
   - platform: template
@@ -101,14 +117,14 @@ number:
     optimistic: true
     unit_of_measurement: " %/s"
     web_server:
-      sorting_group_id: mic_settings
+      sorting_group_id: led_settings
     icon: "mdi:timer-sand"
     restore_value: true
 
   - platform: template
     name: "USB Current Requirement"
     id: usb_current_requirement
-    icon: "mdi:flash-outline"
+    icon: "mdi:flash"
     step: 0.1
     min_value: 0.1
     max_value: 5.0
@@ -122,29 +138,42 @@ number:
       - script.execute: check_power_safety
 
   - platform: template
-    name: "Mic Sensitivity Level"
-    id: mic_sensitivity_level
-    icon: "mdi:tune"
-    step: 1
-    min_value: 0.0
-    max_value: 1700.0
+    name: "Mic Compression Ratio"
+    id: mic_compression_ratio
+    icon: "mdi:knob"
+    step: 0.1
+    min_value: 0.01
+    max_value: 2.0
     # step: 10.0
-    initial_value: 100.0 # Default gain. 100.0 means 1.0 from mic = 100%
-    optimistic: true     # Allows changing the value from the UI
-    unit_of_measurement: "mV"
+    initial_value: 1.0
+    optimistic: true
+    unit_of_measurement: "ratio"
     restore_value: true
     web_server:
       sorting_group_id: mic_settings
 
   - platform: template
-    name: "Mic Zero dB Level "
-    id: zero_db_level
-    icon: "mdi:tune"
+    name: "Mic Sensitivity Floor"
+    id: mic_floor
+    icon: "mdi:knob"
     step: 1
-    min_value: -100.0
+    min_value: -60.0
     max_value: 0.0
-    # step: 10.0
-    initial_value: -40.0
+    initial_value: -25.0
+    unit_of_measurement: "dB"
+    optimistic: true
+    restore_value: true
+    web_server:
+      sorting_group_id: mic_settings
+
+  - platform: template
+    name: "Mic Sensitivity Ceiling"
+    id: mic_ceiling
+    icon: "mdi:knob"
+    step: 1
+    min_value: -60.0
+    max_value: 0.0
+    initial_value: 0.0
     unit_of_measurement: "dB"
     optimistic: true
     restore_value: true
@@ -152,11 +181,11 @@ number:
       sorting_group_id: mic_settings
 
 sensor:
-
   - platform: adc
     pin: GPIO4
     name: "USB-C CC1 Voltage"
     id: cc1_voltage
+    icon: "mdi:lighting-bolt-circle"
     web_server:
       sorting_group_id: power_options
     attenuation: 12db # Allows reading up to ~3.1V
@@ -170,6 +199,7 @@ sensor:
     pin: GPIO3
     name: "USB-C CC2 Voltage"
     id: cc2_voltage
+    icon: "mdi:lighting-bolt-circle"
     web_server:
       sorting_group_id: power_options
     attenuation: 12db
@@ -183,6 +213,7 @@ sensor:
     pin: GPIO1
     name: "USB-A D+ Voltage"
     id: d_plus_voltage
+    icon: "mdi:lighting-bolt-circle"
     web_server:
       sorting_group_id: power_options
     attenuation: 12db
@@ -249,24 +280,24 @@ sensor:
     filters:
       - multiply: 1000  # mV
 
-  - platform: template
-    id: mic_noise_floor
-    name: "Mic Noise Floor"
-    lambda: return id(mic_raw_level).state;
-    update_interval: 0ms
-    unit_of_measurement: "mV"
-    web_server:
-      sorting_group_id: mic_readings
-    icon: "mdi:chart-line"
-    filters:
-      - sliding_window_moving_average:
-          window_size: 1000
-          send_every: 10
-      - throttle: 100ms
+  # - platform: template
+  #   id: mic_noise_floor
+  #   name: "Mic Noise Floor"
+  #   lambda: return id(mic_raw_level).state;
+  #   update_interval: 0ms
+  #   unit_of_measurement: "mV"
+  #   web_server:
+  #     sorting_group_id: mic_readings
+  #   icon: "mdi:chart-line"
+  #   filters:
+  #     - sliding_window_moving_average:
+  #         window_size: 1000
+  #         send_every: 10
+  #     - throttle: 100ms
 
   - platform: template
     id: mic_processed_level
-    name: "Mic Level Processed"
+    name: "Mic Raw Level"
     lambda: return id(mic_raw_level).state;
     unit_of_measurement: "dB"
     update_interval: 0ms
@@ -274,25 +305,29 @@ sensor:
       sorting_group_id: mic_readings
     icon: "mdi:chart-line"
     filters:
-      - offset: !lambda return (-1.0) * id(mic_noise_floor).state;
+      - offset: !lambda return (-1.0) * id(mic_signal_amplitude);
       - lambda: return fabs(x);
       - sliding_window_moving_average:
           window_size: 20
           send_every: 3 
-      - lambda: return 20.0 * log10(x / id(mic_sensitivity_level).state);
+      - lambda: return 20.0 * log10(x / id(mic_signal_amplitude));
       - throttle: 20ms
 
   - platform: template
     id: mic_percentage_level
     name: "Mic Level Percentage"
-    lambda: return id(mic_processed_level).state;
     unit_of_measurement: "%"
     update_interval: 0ms
     web_server:
       sorting_group_id: mic_readings
     icon: "mdi:chart-line"
+    lambda: return id(mic_processed_level).state;
     filters:
-      - lambda: return (x - id(zero_db_level).state) / (-1.0 * id(zero_db_level).state) * 100.0;
+      - offset: !lambda return (-1.0) * id(mic_floor).state;
+      - multiply: !lambda return id(mic_compression_ratio).state;
+      - lambda: |-
+          // Remap loudness level linearly between signal floor dB and 0 dB to 0% - 100%
+          return x / (id(mic_ceiling).state - id(mic_floor).state) * 100.0;
       - clamp:
           min_value: 0.0
           max_value: 100.0
