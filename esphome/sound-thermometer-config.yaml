@@ -50,38 +50,39 @@ web_server:
         name: "Microphone Settings"
         sorting_weight: 2
       - id: power_options
-        name: "Power Options"
+        name: "Power Safety"
         sorting_weight: 3
 
 interval:
   - interval: 10s
+    startup_delay: 0.5s
     then:
-      - if:
-          condition:
-            switch.is_on: led_power_mosfet
-          then:
-            - script.execute: check_power_safety
+      - script.execute: check_power_safety
 
 script:
   - id: check_power_safety
     then:
       - if:
           condition:
-            # If override is OFF and source is less than the configured threshold, turn off
-            lambda: 'return id(usb_source_rating).state < id(usb_current_requirement).state;'
+            lambda: 'return id(power_mosfet).state && id(usb_source_rating).state < id(usb_current_requirement).state;'
           then:
             - logger.log: 
-                format: "SAFETY CUTOFF: USB Source too weak to support current requirement (%.1fA < %.1fA). LEDs disabled."
+                format: "SAFETY CUTOFF: USB Source too weak to support current requirement (%.1fA < %.1fA). Main power disabled."
                 args: [ 'id(usb_source_rating).state', 'id(usb_current_requirement).state' ]
-            - switch.turn_off: led_power_mosfet
-          else:
+                level: WARN
+            - switch.turn_off: power_mosfet
+      - if:
+          condition:
+            lambda: 'return !id(power_mosfet).state && id(usb_source_rating).state >= id(usb_current_requirement).state;'
+          then:
             - logger.log: "Power OK. LEDs Active."
+            - switch.turn_on: power_mosfet
 
 switch:
   - platform: gpio
     pin: GPIO10
-    name: "LED Power Main Switch"
-    id: led_power_mosfet
+    name: "Main Power Switch"
+    id: power_mosfet
     # Default to OFF to prevent brownout on boot
     restore_mode: ALWAYS_OFF
     web_server:
@@ -117,6 +118,8 @@ number:
     restore_value: true
     web_server:
       sorting_group_id: power_options
+    on_value:
+      - script.execute: check_power_safety
 
   - platform: template
     name: "Mic Sensitivity Level"
@@ -186,33 +189,50 @@ sensor:
     update_interval: 2s
 
   - platform: template
-    name: "Interpreted USB Source Current Capability"
+    name: "USB Source Current Capability"
     id: usb_source_rating
     unit_of_measurement: "A"
     accuracy_decimals: 1
     web_server:
       sorting_group_id: power_options
     update_interval: 2s
+    on_value:
+      - script.execute: check_power_safety
     lambda: |-
-      // 1. Check Native USB-C (Standard)
       float cc_max = max(id(cc1_voltage).state, id(cc2_voltage).state);
-      if (cc_max > 1.23) return 3.0;
-      if (cc_max > 0.66) return 1.5;
-
-      // 2. Check D+ Voltage (GPIO 1 with 100k Pull-Up)
       float dp = id(d_plus_voltage).state;
 
-      // D+ is floating; resistor pulls floating line to 3.3V
-      if (dp > 3.0) {
-        return 2.1; 
-      }
-      
-      // Active Chargers (Apple/Samsung): They drive 1.2V - 2.7V
-      if (dp > 1.0) {
-        return 2.0;
+      // 1. Priority: Native USB-C (C-to-C Cable) - High CC voltage
+      if (cc_max > 1.23) return 3.0; // 3.0A C-to-C
+      if (cc_max > 0.66) return 1.5; // 1.5A C-to-C
+
+      // 2. Attempt to assume current limitations for legacy USB-A chargers
+      //    based on D+ voltage levels
+      if (dp > 2.8) {
+        // Case A: 3A Brick
+        // D+ is high AND CC is near 0V -> Assumes 3.0A
+        if (cc_max < 0.1) {
+          return 3.0;
+        } 
+        
+        // Case B: 2.1A Brick (DCP + Legacy Cable)
+        // D+ is high AND CC is at Default USB level (0.25V - 0.5V) -> Assign 2.1A
+        if (cc_max > 0.25 && cc_max < 0.5) {
+          return 2.1;
+        }
+        
+        // Fallback for any other high D+ reading
+        return 2.5; 
       }
 
-      // Computer Port: Pulls line down to ~0.4V (overpowers 100k resistor)
+      // 3. Mid-Power Legacy Charger (D+ is high: 1.0V - 2.8V)
+      // Catches Apple 2.7V, Samsung 1.2V etc., that didn't hit the 2.8V threshold
+      if (dp > 1.0) {
+        return 2.1;
+      }
+
+      // 4. Low Power (Computer Port / Default)
+      // D+ will be pulled down to < 0.6V by a PC's internal resistor.
       return 0.5;
 
   - platform: adc
@@ -306,7 +326,7 @@ light:
     chipset: WS2812
     rgb_order: GRB
     pin: GPIO6
-    num_leds: 10  # Adjust number of LEDs as needed
+    num_leds: 60  # Adjust number of LEDs as needed
     id: sound_level_led
     name: "Sound Monitor"
     web_server:
