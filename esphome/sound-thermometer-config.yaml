@@ -71,7 +71,7 @@ script:
           condition:
             lambda: 'return id(power_mosfet).state && id(usb_source_rating).state < id(usb_current_requirement).state;'
           then:
-            - logger.log: 
+            - logger.log:
                 format: "SAFETY CUTOFF: USB Source too weak to support current requirement (%.1fA < %.1fA). Main power disabled."
                 args: [ 'id(usb_source_rating).state', 'id(usb_current_requirement).state' ]
                 level: WARN
@@ -245,16 +245,16 @@ sensor:
         // D+ is high AND CC is near 0V -> Assumes 3.0A
         if (cc_max < 0.1) {
           return 3.0;
-        } 
-        
+        }
+
         // Case B: 2.1A Brick (DCP + Legacy Cable)
         // D+ is high AND CC is at Default USB level (0.25V - 0.5V) -> Assign 2.1A
         if (cc_max > 0.25 && cc_max < 0.5) {
           return 2.1;
         }
-        
+
         // Fallback for any other high D+ reading
-        return 2.5; 
+        return 2.5;
       }
 
       // 3. Mid-Power Legacy Charger (D+ is high: 1.0V - 2.8V)
@@ -310,7 +310,7 @@ sensor:
       - lambda: return fabs(x);
       - sliding_window_moving_average:
           window_size: 20
-          send_every: 3 
+          send_every: 3
       - lambda: return 20.0 * log10(x / id(mic_signal_amplitude));
       - throttle: 20ms
 
@@ -370,7 +370,7 @@ light:
     restore_mode: RESTORE_DEFAULT_ON
     icon: "mdi:lightbulb"
     on_turn_on:
-      - light.control: 
+      - light.control:
           id: sound_level_led
           effect: "Sound Gradient"
     effects:
@@ -389,7 +389,7 @@ light:
                   (uint8_t)(highColor.get_green() * 255),
                   (uint8_t)(highColor.get_blue() * 255)
               );
-            
+
             // Light up LEDs proportionally
             for (int i = 0; i < it.size(); i++) {
               if (i < num_lit && num_lit > 0) {
