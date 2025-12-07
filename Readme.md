@@ -8,10 +8,13 @@ A quick ESPHome project that illuminates an addressable LED strip based on sound
 - Configurable sound sensitivity and LED colors via ESPHome webui
 - Support for USB C and A power source capability detection
 - Safety kill switch via a mosfet to disable the LED load if the power source doesn't support enough current
-- AP mode fallback
-- OTA over webui for easy updates
+- Pins for power switch
 
-## Photos
+## Media
+
+https://github.com/user-attachments/assets/a23c17ae-ab65-41b6-94d6-0d3440485dc3
+
+![webui](./docs/webui.png)
 
 <img src="./docs/pcb_assembled.jpg" width="100%" />
 
