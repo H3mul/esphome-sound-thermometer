@@ -29,6 +29,7 @@ wifi:
   use_address: !secret sound_thermometer_local_ip
   # Fallback AP mode when WiFi is unavailable
   ap:
+    ap_timeout: 15s
     password: !secret ap_password
 
 external_components:
@@ -103,6 +104,23 @@ switch:
     # Default to OFF to prevent brownout on boot
     restore_mode: ALWAYS_OFF
 
+  - platform: template
+    name: "Active Mic Floor"
+    id: active_mic_floor
+    icon: "mdi:swap-vertical"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    web_server:
+      sorting_group_id: mic_settings
+    on_turn_on:
+      then:
+        - lambda: |-
+            ESP_LOGI("mic_floor", "Switched to Floor 2");
+    on_turn_off:
+      then:
+        - lambda: |-
+            ESP_LOGI("mic_floor", "Switched to Floor 1");
+
 binary_sensor:
   - platform: template
     name: "Power Safety Cutoff Active"
@@ -164,13 +182,27 @@ number:
       sorting_group_id: mic_settings
 
   - platform: template
-    name: "Mic Sensitivity Floor"
-    id: mic_floor
+    name: "Mic Sensitivity Floor 1"
+    id: mic_floor_1
     icon: "mdi:knob"
     step: 1
     min_value: -60.0
     max_value: 0.0
     initial_value: -25.0
+    unit_of_measurement: "dB"
+    optimistic: true
+    restore_value: true
+    web_server:
+      sorting_group_id: mic_settings
+
+  - platform: template
+    name: "Mic Sensitivity Floor 2"
+    id: mic_floor_2
+    icon: "mdi:knob"
+    step: 1
+    min_value: -60.0
+    max_value: 0.0
+    initial_value: -40.0
     unit_of_measurement: "dB"
     optimistic: true
     restore_value: true
@@ -335,11 +367,14 @@ sensor:
     icon: "mdi:chart-line"
     lambda: return id(mic_processed_level).state;
     filters:
-      - offset: !lambda return (-1.0) * id(mic_floor).state;
+      - offset: !lambda |-
+          float active_floor = id(active_mic_floor).state ? id(mic_floor_2).state : id(mic_floor_1).state;
+          return (-1.0) * active_floor;
       - multiply: !lambda return id(mic_compression_ratio).state;
       - lambda: |-
           // Remap loudness level linearly between signal floor dB and 0 dB to 0% - 100%
-          return x / (id(mic_ceiling).state - id(mic_floor).state) * 100.0;
+          float active_floor = id(active_mic_floor).state ? id(mic_floor_2).state : id(mic_floor_1).state;
+          return x / (id(mic_ceiling).state - active_floor) * 100.0;
       - clamp:
           min_value: 0.0
           max_value: 100.0
