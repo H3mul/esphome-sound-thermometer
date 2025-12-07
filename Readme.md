@@ -71,7 +71,7 @@ Once configured and integrated with Home Assistant:
 
 3. **Flash the device:**
    ```bash
-   esphome run esphome.yaml
+   esphome run esphome/sound-thermometer-config.yaml
    ```
 
 4. **Access the webui:**
