@@ -65,7 +65,7 @@ Once configured and integrated with Home Assistant:
    ```
 
 2. **Create or update your ESPHome configuration file:**
-   - Use the provided `esphome.yaml` file in this directory
+   - Use the provided [`esphome/sound-thermometer-config.yaml`](esphome/sound-thermometer-config.yaml) file in this directory
    - Adjust any pins, WiFi credentials, or device settings as needed
    - Add your own `secrets.yaml` with sensitive information referenced in the config
 
