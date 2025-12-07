@@ -38,18 +38,9 @@ https://github.com/user-attachments/assets/a23c17ae-ab65-41b6-94d6-0d3440485dc3
 - AMS1117-3.3 Voltage Regulator for clean mic module power
 - P-Channel MOSFET for power control (AO3401)
 - P2N2222A NPN transistor for mosfet driving
-- USB C 8-pin breakout dashboard with 5.1k resistors for CC pins (designating the device as a power drain)
+- USB C 8-pin breakout board with 5.1k resistors for CC pins (designating the device as a power drain)
 - Bulk and filter capacitors
 - A few resistors (see schematic for details)
-
-## Usage
-
-Once configured and integrated with Home Assistant:
-
-1. View live temperature readings in the dashboard
-2. Set up automations to trigger audio announcements at specific temperatures
-3. Receive notifications when temperature thresholds are exceeded
-4. Monitor device status and connectivity
 
 ## ESPHome Installation & Configuration
 
