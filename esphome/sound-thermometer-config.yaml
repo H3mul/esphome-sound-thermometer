@@ -26,7 +26,7 @@ wifi:
   - ssid: !secret wifi_ssid
     password: !secret wifi_password
   fast_connect: true
-  use_address: !secret sound_thermometer_local_ip
+  use_address: !secret sound_thermometer_test_local_ip
   # Fallback AP mode when WiFi is unavailable
   ap:
     ap_timeout: 15s

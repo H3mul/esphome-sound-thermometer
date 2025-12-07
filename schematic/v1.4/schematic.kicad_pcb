@@ -8,7 +8,8 @@
 	)
 	(paper "User" 135 100)
 	(title_block
-		(title "Sound Thermometer v1.4")
+		(title "Sound Thermometer")
+		(rev "v1.4")
 	)
 	(layers
 		(0 "F.Cu" signal "Front")
