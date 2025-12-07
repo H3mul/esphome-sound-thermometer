@@ -22,11 +22,11 @@ logger:
   level: INFO
 
 wifi:
-  # networks:
-  # - ssid: !secret wifi_ssid
-  #   password: !secret wifi_password
-  # fast_connect: true
-  # use_address: !secret sound_thermometer_local_ip
+  networks:
+  - ssid: !secret wifi_ssid
+    password: !secret wifi_password
+  fast_connect: true
+  use_address: !secret sound_thermometer_local_ip
   # Fallback AP mode when WiFi is unavailable
   ap:
     password: !secret ap_password
